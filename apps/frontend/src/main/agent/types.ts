@@ -1,6 +1,7 @@
 import { ChildProcess } from 'child_process';
 import type { CompletablePhase, ExecutionPhase } from '../../shared/constants/phase-protocol';
 import type { TaskEventPayload } from './task-event-schema';
+import type { Provider } from '../../shared/constants/models';
 
 /**
  * Agent-specific types for process and state management
@@ -50,6 +51,7 @@ export interface TaskExecutionOptions {
   baseBranch?: string;
   useWorktree?: boolean; // If false, use --direct mode (no worktree isolation)
   useLocalBranch?: boolean; // If true, use local branch directly instead of preferring origin/branch
+  provider?: Provider; // AI provider ('claude' or 'copilot')
 }
 
 export interface SpecCreationMetadata {
@@ -74,6 +76,8 @@ export interface SpecCreationMetadata {
   // Workspace mode - whether to use worktree isolation
   useWorktree?: boolean; // If false, use --direct mode (no worktree isolation)
   useLocalBranch?: boolean; // If true, use local branch directly instead of preferring origin/branch
+  // AI provider selection
+  provider?: Provider; // 'claude' (default) or 'copilot'
 }
 
 export interface IdeationProgressData {

@@ -230,19 +230,27 @@ export class AgentManager extends EventEmitter {
     baseBranch?: string,
     projectId?: string
   ): Promise<void> {
-    // Pre-flight auth check: Verify active profile has valid authentication
-    // Ensure profile manager is initialized to prevent race condition
-    let profileManager: ClaudeProfileManager;
-    try {
-      profileManager = await initializeClaudeProfileManager();
-    } catch (error) {
-      console.error('[AgentManager] Failed to initialize profile manager:', error);
-      this.emit('error', taskId, 'Failed to initialize profile manager. Please check file permissions and disk space.');
-      return;
-    }
-    if (!profileManager.hasValidAuth()) {
-      this.emit('error', taskId, 'Claude authentication required. Please authenticate in Settings > Claude Profiles before starting tasks.');
-      return;
+    // Determine provider from metadata (default: 'claude')
+    const provider = metadata?.provider || 'claude';
+
+    // Pre-flight auth check: Only needed for Claude provider
+    if (provider === 'claude') {
+      // Verify active profile has valid authentication
+      // Ensure profile manager is initialized to prevent race condition
+      let profileManager: ClaudeProfileManager;
+      try {
+        profileManager = await initializeClaudeProfileManager();
+      } catch (error) {
+        console.error('[AgentManager] Failed to initialize profile manager:', error);
+        this.emit('error', taskId, 'Failed to initialize profile manager. Please check file permissions and disk space.');
+        return;
+      }
+      if (!profileManager.hasValidAuth()) {
+        this.emit('error', taskId, 'Claude authentication required. Please authenticate in Settings > Claude Profiles before starting tasks.');
+        return;
+      }
+    } else {
+      console.log(`[AgentManager] Provider is '${provider}' — skipping Claude auth check`);
     }
 
     // Ensure Python environment is ready before spawning process (prevents exit code 127 race condition)
@@ -282,6 +290,11 @@ export class AgentManager extends EventEmitter {
 
     // Get combined environment variables
     const combinedEnv = this.processManager.getCombinedEnv(projectPath);
+
+    // Pass provider to backend via environment variable
+    if (provider !== 'claude') {
+      combinedEnv['AUTOCODE_PROVIDER'] = provider;
+    }
 
     // spec_runner.py will auto-start run.py after spec creation completes
     const args = [specRunnerPath, '--task', taskDescription, '--project-dir', projectPath];
@@ -342,19 +355,27 @@ export class AgentManager extends EventEmitter {
     options: TaskExecutionOptions = {},
     projectId?: string
   ): Promise<void> {
-    // Pre-flight auth check: Verify active profile has valid authentication
-    // Ensure profile manager is initialized to prevent race condition
-    let profileManager: ClaudeProfileManager;
-    try {
-      profileManager = await initializeClaudeProfileManager();
-    } catch (error) {
-      console.error('[AgentManager] Failed to initialize profile manager:', error);
-      this.emit('error', taskId, 'Failed to initialize profile manager. Please check file permissions and disk space.');
-      return;
-    }
-    if (!profileManager.hasValidAuth()) {
-      this.emit('error', taskId, 'Claude authentication required. Please authenticate in Settings > Claude Profiles before starting tasks.');
-      return;
+    // Determine provider from options (default: 'claude')
+    const provider = options.provider || 'claude';
+
+    // Pre-flight auth check: Only needed for Claude provider
+    if (provider === 'claude') {
+      // Verify active profile has valid authentication
+      // Ensure profile manager is initialized to prevent race condition
+      let profileManager: ClaudeProfileManager;
+      try {
+        profileManager = await initializeClaudeProfileManager();
+      } catch (error) {
+        console.error('[AgentManager] Failed to initialize profile manager:', error);
+        this.emit('error', taskId, 'Failed to initialize profile manager. Please check file permissions and disk space.');
+        return;
+      }
+      if (!profileManager.hasValidAuth()) {
+        this.emit('error', taskId, 'Claude authentication required. Please authenticate in Settings > Claude Profiles before starting tasks.');
+        return;
+      }
+    } else {
+      console.log(`[AgentManager] Provider is '${provider}' — skipping Claude auth check`);
     }
 
     // Ensure Python environment is ready before spawning process (prevents exit code 127 race condition)
@@ -380,6 +401,11 @@ export class AgentManager extends EventEmitter {
 
     // Get combined environment variables
     const combinedEnv = this.processManager.getCombinedEnv(projectPath);
+
+    // Pass provider to backend via environment variable
+    if (provider !== 'claude') {
+      combinedEnv['AUTOCODE_PROVIDER'] = provider;
+    }
 
     const args = [runPath, '--spec', specId, '--project-dir', projectPath];
 

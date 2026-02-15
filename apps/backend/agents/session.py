@@ -8,8 +8,15 @@ memory updates, recovery tracking, and Linear integration.
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING, Union
 
 from claude_agent_sdk import ClaudeSDKClient
+
+if TYPE_CHECKING:
+    from core.copilot_client import CopilotSessionAdapter
+
+# Type alias for clients from any provider
+AgentClient = Union[ClaudeSDKClient, "CopilotSessionAdapter"]
 from core.error_utils import (
     is_authentication_error,
     is_rate_limit_error,
@@ -439,17 +446,17 @@ async def post_session_processing(
 
 
 async def run_agent_session(
-    client: ClaudeSDKClient,
+    client: AgentClient,
     message: str,
     spec_dir: Path,
     verbose: bool = False,
     phase: LogPhase = LogPhase.CODING,
 ) -> tuple[str, str, dict]:
     """
-    Run a single agent session using Claude Agent SDK.
+    Run a single agent session using Claude Agent SDK or Copilot SDK.
 
     Args:
-        client: Claude SDK client
+        client: Agent SDK client (ClaudeSDKClient or CopilotSessionAdapter)
         message: The prompt to send
         spec_dir: Spec directory path
         verbose: Whether to show detailed output

@@ -1,12 +1,24 @@
 /**
- * Model and agent profile constants
- * Claude models, thinking levels, memory backends, and agent profiles
+ * Model, provider, and agent profile constants
+ * Claude/Copilot providers, models, thinking levels, memory backends, and agent profiles
  */
 
 import type { AgentProfile, PhaseModelConfig, FeatureModelConfig, FeatureThinkingConfig } from '../types/settings';
 
 // ============================================
-// Available Models
+// Provider Configuration
+// ============================================
+
+export type Provider = 'claude' | 'copilot';
+export const DEFAULT_PROVIDER: Provider = 'claude';
+
+export const PROVIDERS = [
+  { value: 'claude' as Provider, label: 'Claude (Anthropic)', description: 'Claude AI models via Claude Code CLI' },
+  { value: 'copilot' as Provider, label: 'GitHub Copilot', description: 'Multiple AI models via Copilot CLI' }
+] as const;
+
+// ============================================
+// Available Models (Claude)
 // ============================================
 
 export const AVAILABLE_MODELS = [
@@ -26,6 +38,40 @@ export const MODEL_ID_MAP: Record<string, string> = {
   sonnet: 'claude-sonnet-4-5-20250929',
   haiku: 'claude-haiku-4-5-20251001'
 } as const;
+
+// ============================================
+// Available Models (Copilot)
+// ============================================
+
+export const COPILOT_AVAILABLE_MODELS = [
+  { value: 'gpt-4.1', label: 'GPT-4.1' },
+  { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+  { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano' },
+  { value: 'o4-mini', label: 'o4-mini' },
+  { value: 'claude-sonnet', label: 'Claude Sonnet 4' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' }
+] as const;
+
+// Maps Copilot model shorthand to full IDs
+// Values must match apps/backend/phase_config.py COPILOT_MODEL_ID_MAP
+export const COPILOT_MODEL_ID_MAP: Record<string, string> = {
+  'gpt-4.1': 'gpt-4.1',
+  'gpt-4.1-mini': 'gpt-4.1-mini',
+  'gpt-4.1-nano': 'gpt-4.1-nano',
+  'o4-mini': 'o4-mini',
+  'claude-sonnet': 'claude-sonnet-4',
+  'gemini-2.5-pro': 'gemini-2.5-pro'
+} as const;
+
+/** Get the available models for a given provider */
+export function getModelsForProvider(provider: Provider) {
+  return provider === 'copilot' ? COPILOT_AVAILABLE_MODELS : AVAILABLE_MODELS;
+}
+
+/** Get the model ID map for a given provider */
+export function getModelIdMapForProvider(provider: Provider) {
+  return provider === 'copilot' ? COPILOT_MODEL_ID_MAP : MODEL_ID_MAP;
+}
 
 // Maps thinking levels to budget tokens
 export const THINKING_BUDGET_MAP: Record<string, number> = {

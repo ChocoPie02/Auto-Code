@@ -24,6 +24,26 @@ MODEL_ID_MAP: dict[str, str] = {
     "haiku": "claude-haiku-4-5-20251001",
 }
 
+# Copilot model shorthand mapping
+# Available models depend on Copilot subscription; these are common defaults
+COPILOT_MODEL_ID_MAP: dict[str, str] = {
+    "gpt-4.1": "gpt-4.1",
+    "gpt-4.1-mini": "gpt-4.1-mini",
+    "gpt-4.1-nano": "gpt-4.1-nano",
+    "o4-mini": "o4-mini",
+    "claude-sonnet": "claude-sonnet-4",
+    "gemini-2.5-pro": "gemini-2.5-pro",
+}
+
+# Default provider-to-model mapping when using Claude shorthands with Copilot
+CLAUDE_TO_COPILOT_MODEL_MAP: dict[str, str] = {
+    "opus": "gpt-4.1",
+    "opus-1m": "gpt-4.1",
+    "opus-4.5": "gpt-4.1",
+    "sonnet": "claude-sonnet-4",
+    "haiku": "gpt-4.1-mini",
+}
+
 # Model shorthand to required SDK beta headers
 # Maps model shorthands that need special beta flags (e.g., 1M context window)
 MODEL_BETAS_MAP: dict[str, list[str]] = {
@@ -104,27 +124,68 @@ class TaskMetadataConfig(TypedDict, total=False):
     model: str
     thinkingLevel: str
     fastMode: bool
+    provider: str  # "claude" (default) or "copilot"
 
 
 Phase = Literal["spec", "planning", "coding", "qa"]
 
 
-def resolve_model_id(model: str) -> str:
+# Supported providers
+SUPPORTED_PROVIDERS = {"claude", "copilot"}
+DEFAULT_PROVIDER = "claude"
+
+
+def get_active_provider(spec_dir: Path) -> str:
+    """
+    Get the active AI provider from task_metadata.json.
+
+    Args:
+        spec_dir: Path to the spec directory
+
+    Returns:
+        Provider name ("claude" or "copilot"), defaults to "claude"
+    """
+    metadata = load_task_metadata(spec_dir)
+    if metadata:
+        provider = metadata.get("provider", DEFAULT_PROVIDER)
+        if provider in SUPPORTED_PROVIDERS:
+            return provider
+        logger.warning(f"Unknown provider '{provider}', falling back to '{DEFAULT_PROVIDER}'")
+    return DEFAULT_PROVIDER
+
+
+def resolve_model_id(model: str, provider: str | None = None) -> str:
     """
     Resolve a model shorthand (haiku, sonnet, opus) to a full model ID.
     If the model is already a full ID, return it unchanged.
 
     Priority:
-    1. Environment variable override (from API Profile)
-    2. Hardcoded MODEL_ID_MAP
+    1. Environment variable override (from API Profile) — Claude only
+    2. Hardcoded MODEL_ID_MAP (provider-aware)
     3. Pass through unchanged (assume full model ID)
 
     Args:
         model: Model shorthand or full ID
+        provider: Provider name ("claude" or "copilot"). None defaults to Claude.
 
     Returns:
-        Full Claude model ID
+        Full model ID for the active provider
     """
+    effective_provider = provider or DEFAULT_PROVIDER
+
+    if effective_provider == "copilot":
+        # For Copilot: map Claude shorthands to Copilot equivalents
+        if model in CLAUDE_TO_COPILOT_MODEL_MAP:
+            mapped = CLAUDE_TO_COPILOT_MODEL_MAP[model]
+            logger.info(f"Mapped Claude shorthand '{model}' to Copilot model '{mapped}'")
+            return mapped
+        # Check if it's a Copilot-native shorthand
+        if model in COPILOT_MODEL_ID_MAP:
+            return COPILOT_MODEL_ID_MAP[model]
+        # Pass through (could be a full model ID like 'gpt-4.1')
+        return model
+
+    # Claude provider (existing behavior)
     # Check for environment variable override (from API Profile custom model mappings)
     if model in MODEL_ID_MAP:
         env_var_map = {

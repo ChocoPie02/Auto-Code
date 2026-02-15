@@ -502,6 +502,36 @@ def create_client(
        (see security.py for ALLOWED_COMMANDS)
     4. Tool filtering - Each agent type only sees relevant tools (prevents misuse)
     """
+    # --- Provider dispatch ---
+    # Check if this task uses Copilot instead of Claude
+    from phase_config import get_active_provider
+    provider = get_active_provider(spec_dir)
+    if provider == "copilot":
+        from core.copilot_client import create_copilot_client
+        import asyncio
+        logger.info("Provider is 'copilot' — delegating to create_copilot_client()")
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(
+                    asyncio.run,
+                    create_copilot_client(
+                        project_dir, spec_dir, model, agent_type,
+                        max_thinking_tokens, output_format, agents,
+                        betas, effort_level, fast_mode,
+                    )
+                ).result()
+        else:
+            return asyncio.run(
+                create_copilot_client(
+                    project_dir, spec_dir, model, agent_type,
+                    max_thinking_tokens, output_format, agents,
+                    betas, effort_level, fast_mode,
+                )
+            )
+
+    # --- Claude provider (existing code) ---
     # Collect env vars to pass to SDK (ANTHROPIC_BASE_URL, CLAUDE_CONFIG_DIR, etc.)
     sdk_env = get_sdk_env_vars()
 

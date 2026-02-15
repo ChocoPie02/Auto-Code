@@ -81,6 +81,35 @@ def create_simple_client(
     Raises:
         ValueError: If agent_type is not found in AGENT_CONFIGS
     """
+    # --- Provider dispatch ---
+    # Simple clients check AUTOCODE_PROVIDER env var (no spec_dir available)
+    provider = os.environ.get("AUTOCODE_PROVIDER", "claude")
+    if provider == "copilot":
+        from core.copilot_client import create_copilot_simple_client
+        import asyncio
+        logger.info("Provider is 'copilot' — delegating to create_copilot_simple_client()")
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(
+                    asyncio.run,
+                    create_copilot_simple_client(
+                        agent_type, model, system_prompt, cwd,
+                        max_turns, max_thinking_tokens, betas,
+                        effort_level, fast_mode,
+                    )
+                ).result()
+        else:
+            return asyncio.run(
+                create_copilot_simple_client(
+                    agent_type, model, system_prompt, cwd,
+                    max_turns, max_thinking_tokens, betas,
+                    effort_level, fast_mode,
+                )
+            )
+
+    # --- Claude provider (existing code) ---
     # Get environment variables for SDK (including CLAUDE_CONFIG_DIR if set)
     sdk_env = get_sdk_env_vars()
 
