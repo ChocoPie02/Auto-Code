@@ -174,6 +174,7 @@ export function OnboardingWizard({
             onBack={goToPreviousStep}
             onSkip={completeWizard}
             onAPIKeyPathComplete={handleSkipToMemory}
+            onCopilotPathComplete={handleSkipToMemory}
           />
         );
       case 'oauth':

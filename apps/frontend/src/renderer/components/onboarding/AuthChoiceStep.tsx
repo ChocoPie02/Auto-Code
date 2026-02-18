@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { LogIn, Key, Shield } from 'lucide-react';
+import { LogIn, Key, Shield, Github } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { ProfileEditDialog } from '../settings/ProfileEditDialog';
@@ -10,6 +10,7 @@ interface AuthChoiceStepProps {
   onBack: () => void;
   onSkip: () => void;
   onAPIKeyPathComplete?: () => void; // Called when profile is created (skips oauth)
+  onCopilotPathComplete?: () => void; // Called when Copilot is selected (skips oauth)
 }
 
 interface AuthOptionCardProps {
@@ -25,9 +26,8 @@ function AuthOptionCard({ icon, title, description, onClick, variant = 'default'
   return (
     <Card
       data-testid={dataTestId}
-      className={`border border-border bg-card/50 backdrop-blur-sm cursor-pointer transition-all hover:border-primary/50 hover:shadow-md ${
-        variant === 'oauth' ? 'hover:bg-accent/5' : ''
-      }`}
+      className={`border border-border bg-card/50 backdrop-blur-sm cursor-pointer transition-all hover:border-primary/50 hover:shadow-md ${variant === 'oauth' ? 'hover:bg-accent/5' : ''
+        }`}
       onClick={onClick}
     >
       <CardContent className="p-6">
@@ -51,19 +51,22 @@ function AuthOptionCard({ icon, title, description, onClick, variant = 'default'
  * Allows new users to choose between:
  * 1. OAuth authentication (Sign in with Anthropic)
  * 2. Custom API key authentication (Use Custom API Key)
+ * 3. GitHub Copilot (Use GitHub Copilot)
  *
  * Features:
- * - Two equal-weight authentication options
+ * - Three equal-weight authentication options
  * - Skip button for users who want to configure later
  * - API key path opens ProfileEditDialog for profile creation
  * - OAuth path proceeds to OAuthStep
+ * - Copilot path saves provider setting and skips OAuth
  *
  * AC Coverage:
- * - AC1: Displays first-run screen with two clear options
+ * - AC1: Displays first-run screen with three clear options
  */
-export function AuthChoiceStep({ onNext, onBack, onSkip, onAPIKeyPathComplete }: AuthChoiceStepProps) {
+export function AuthChoiceStep({ onNext, onBack, onSkip, onAPIKeyPathComplete, onCopilotPathComplete }: AuthChoiceStepProps) {
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
   const profiles = useSettingsStore((state) => state.profiles);
+  const { updateSettings } = useSettingsStore();
 
   // Track initial profiles length to detect new profile creation
   const initialProfilesLengthRef = useRef(profiles.length);
@@ -79,12 +82,28 @@ export function AuthChoiceStep({ onNext, onBack, onSkip, onAPIKeyPathComplete }:
 
   // OAuth button handler - proceeds to OAuth step
   const handleOAuthChoice = () => {
+    // Ensure provider is set to claude when choosing Anthropic OAuth
+    updateSettings({ provider: 'claude' });
     onNext();
   };
 
   // API Key button handler - opens profile dialog
   const handleAPIKeyChoice = () => {
+    // Ensure provider is set to claude when choosing API key
+    updateSettings({ provider: 'claude' });
     setIsProfileDialogOpen(true);
+  };
+
+  // GitHub Copilot button handler - saves provider and skips oauth
+  const handleCopilotChoice = () => {
+    // Save provider as copilot
+    updateSettings({ provider: 'copilot' });
+    // Save to disk as well
+    window.electronAPI.saveSettings({ provider: 'copilot' });
+    // Skip OAuth step (same as API key path)
+    if (onCopilotPathComplete) {
+      onCopilotPathComplete();
+    }
   };
 
   // Profile dialog close handler - detects profile creation and skips oauth step
@@ -104,7 +123,7 @@ export function AuthChoiceStep({ onNext, onBack, onSkip, onAPIKeyPathComplete }:
   return (
     <>
       <div className="flex h-full flex-col items-center justify-center px-8 py-6">
-        <div className="w-full max-w-2xl">
+        <div className="w-full max-w-3xl">
           {/* Hero Section */}
           <div className="text-center mb-8">
             <div className="flex justify-center mb-4">
@@ -116,12 +135,12 @@ export function AuthChoiceStep({ onNext, onBack, onSkip, onAPIKeyPathComplete }:
               Choose Your Authentication Method
             </h1>
             <p className="mt-3 text-muted-foreground text-lg">
-              Select how you want to authenticate with Claude. You can change this later in Settings.
+              Select how you want to authenticate. You can change this later in Settings.
             </p>
           </div>
 
-          {/* Authentication Options - Equal Visual Weight */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+          {/* Authentication Options - Three Equal Visual Weight */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
             <AuthOptionCard
               icon={<LogIn className="h-6 w-6" />}
               title="Sign in with Anthropic"
@@ -137,12 +156,19 @@ export function AuthChoiceStep({ onNext, onBack, onSkip, onAPIKeyPathComplete }:
               onClick={handleAPIKeyChoice}
               data-testid="auth-option-apikey"
             />
+            <AuthOptionCard
+              icon={<Github className="h-6 w-6" />}
+              title="Use GitHub Copilot"
+              description="Sign in with your GitHub account. Access multiple AI models through your Copilot subscription."
+              onClick={handleCopilotChoice}
+              data-testid="auth-option-copilot"
+            />
           </div>
 
           {/* Info text */}
           <div className="text-center mb-8">
             <p className="text-muted-foreground text-sm">
-              Both options provide full access to Claude Code features. Choose based on your preference.
+              All options provide full access to Auto Code features. Choose based on your preference.
             </p>
           </div>
 
@@ -164,7 +190,7 @@ export function AuthChoiceStep({ onNext, onBack, onSkip, onAPIKeyPathComplete }:
       <ProfileEditDialog
         open={isProfileDialogOpen}
         onOpenChange={handleProfileDialogClose}
-        // No profile prop = create mode
+      // No profile prop = create mode
       />
     </>
   );

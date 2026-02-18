@@ -429,6 +429,10 @@ export function TaskCreationWizard({
       const allReferencedFiles = parseFileMentions(description, referencedFiles);
 
       const metadata: TaskMetadata = { sourceType: 'manual' };
+      // Include AI provider so task_metadata.json tells the backend which client to use
+      if (settings.provider && settings.provider !== 'claude') {
+        metadata.provider = settings.provider;
+      }
       if (category) metadata.category = category;
       if (priority) metadata.priority = priority;
       if (complexity) metadata.complexity = complexity;

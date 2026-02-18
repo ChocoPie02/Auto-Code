@@ -294,6 +294,8 @@ export interface AppSettings {
   seenVersionWarnings?: string[];
   // Sidebar collapsed state (icons only when true)
   sidebarCollapsed?: boolean;
+  // AI provider selection ('claude' default, or 'copilot' for GitHub Copilot)
+  provider?: 'claude' | 'copilot';
 }
 
 // Auto-Claude Source Environment Configuration (for auto-claude repo .env)

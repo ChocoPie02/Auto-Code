@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC_CHANNELS, AUTO_BUILD_PATHS, getSpecsDir } from '../../../shared/constants';
 import type { IPCResult, TaskStartOptions, TaskStatus, ImageAttachment } from '../../../shared/types';
+import type { AppSettings } from '../../../shared/types';
 import path from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { spawnSync, execFileSync } from 'child_process';
@@ -21,6 +22,46 @@ import { writeFileAtomicSync } from '../../utils/atomic-file';
 import { findTaskWorktree } from '../../worktree-paths';
 import { projectStore } from '../../project-store';
 import { getIsolatedGitEnv, detectWorktreeBranch } from '../../utils/git-isolation';
+import { readSettingsFile } from '../../settings-utils';
+
+/**
+ * Get the effective AI provider for a task.
+ * Priority: task metadata.provider > global settings.provider > 'claude'
+ */
+function getEffectiveProvider(taskMetadataProvider?: string): 'claude' | 'copilot' {
+  if (taskMetadataProvider === 'claude' || taskMetadataProvider === 'copilot') {
+    return taskMetadataProvider;
+  }
+  const settings = (readSettingsFile() || {}) as Partial<AppSettings>;
+  if (settings.provider === 'copilot') {
+    return 'copilot';
+  }
+  return 'claude';
+}
+
+/**
+ * Ensure task_metadata.json contains the provider field.
+ * The backend reads provider from this file (not from env vars) to decide
+ * which client to create. This is a belt-and-suspenders fix for tasks
+ * created before the provider was saved, or from integrations that
+ * don't go through TaskCreationWizard.
+ */
+function ensureProviderInTaskMetadata(specDir: string, provider: 'claude' | 'copilot'): void {
+  if (provider === 'claude') return; // No need to write default
+  const metadataPath = path.join(specDir, 'task_metadata.json');
+  try {
+    if (existsSync(metadataPath)) {
+      const existing = JSON.parse(readFileSync(metadataPath, 'utf-8'));
+      if (!existing.provider) {
+        existing.provider = provider;
+        writeFileSync(metadataPath, JSON.stringify(existing, null, 2), 'utf-8');
+        console.warn(`[ensureProviderInTaskMetadata] Wrote provider='${provider}' to ${metadataPath}`);
+      }
+    }
+  } catch (err) {
+    console.warn('[ensureProviderInTaskMetadata] Failed to update task_metadata.json:', err);
+  }
+}
 
 /**
  * Safe file read that handles missing files without TOCTOU issues.
@@ -149,7 +190,9 @@ export function registerTaskExecutionHandlers(
       }
 
       // Check authentication - Claude requires valid auth to run tasks
-      if (!profileManager.hasValidAuth()) {
+      // Skip this check for Copilot provider (auth handled by Copilot CLI/env vars)
+      const taskProvider = getEffectiveProvider(task.metadata?.provider);
+      if (taskProvider === 'claude' && !profileManager.hasValidAuth()) {
         console.warn('[TASK_START] No valid authentication for active profile');
         mainWindow.webContents.send(
           IPC_CHANNELS.TASK_ERROR,
@@ -227,6 +270,10 @@ export function registerTaskExecutionHandlers(
       // Get base branch: task-level override takes precedence over project settings
       const baseBranch = task.metadata?.baseBranch || project.settings?.mainBranch;
 
+      // Ensure task_metadata.json has the provider field before backend reads it
+      const effectiveProvider = getEffectiveProvider(task.metadata?.provider);
+      ensureProviderInTaskMetadata(specDir, effectiveProvider);
+
       if (needsSpecCreation) {
         // No spec file - need to run spec_runner.py to create the spec
         const taskDescription = task.description || task.title;
@@ -235,7 +282,9 @@ export function registerTaskExecutionHandlers(
         // Start spec creation process - pass the existing spec directory
         // so spec_runner uses it instead of creating a new one
         // Also pass baseBranch so worktrees are created from the correct branch
-        agentManager.startSpecCreation(taskId, project.path, taskDescription, specDir, task.metadata, baseBranch, project.id);
+        // Merge effective provider into metadata so AgentManager skips Claude auth for Copilot
+        const metadataWithProvider = { ...task.metadata, provider: effectiveProvider };
+        agentManager.startSpecCreation(taskId, project.path, taskDescription, specDir, metadataWithProvider, baseBranch, project.id);
       } else if (needsImplementation) {
         // Spec exists but no subtasks - run run.py to create implementation plan and execute
         // Read the spec.md to get the task description
@@ -258,7 +307,8 @@ export function registerTaskExecutionHandlers(
             workers: 1,
             baseBranch,
             useWorktree: task.metadata?.useWorktree,
-            useLocalBranch: task.metadata?.useLocalBranch
+            useLocalBranch: task.metadata?.useLocalBranch,
+            provider: getEffectiveProvider(task.metadata?.provider)
           },
           project.id
         );
@@ -276,7 +326,8 @@ export function registerTaskExecutionHandlers(
             workers: 1,
             baseBranch,
             useWorktree: task.metadata?.useWorktree,
-            useLocalBranch: task.metadata?.useLocalBranch
+            useLocalBranch: task.metadata?.useLocalBranch,
+            provider: getEffectiveProvider(task.metadata?.provider)
           },
           project.id
         );
@@ -688,7 +739,9 @@ export function registerTaskExecutionHandlers(
             return { success: false, error: initResult.error };
           }
           const profileManager = initResult.profileManager;
-          if (!profileManager.hasValidAuth()) {
+          // Skip Claude auth check for Copilot provider (auth handled by Copilot CLI/env vars)
+          const autoStartProvider = getEffectiveProvider(task.metadata?.provider);
+          if (autoStartProvider === 'claude' && !profileManager.hasValidAuth()) {
             console.warn('[TASK_UPDATE_STATUS] No valid authentication for active profile');
             if (mainWindow) {
               mainWindow.webContents.send(
@@ -723,11 +776,16 @@ export function registerTaskExecutionHandlers(
           // Get base branch: task-level override takes precedence over project settings
           const baseBranchForUpdate = task.metadata?.baseBranch || project.settings?.mainBranch;
 
+          // Ensure task_metadata.json has the provider field before backend reads it
+          const effectiveProviderForUpdate = getEffectiveProvider(task.metadata?.provider);
+          ensureProviderInTaskMetadata(specDir, effectiveProviderForUpdate);
+
           if (needsSpecCreation) {
             // No spec file - need to run spec_runner.py to create the spec
             const taskDescription = task.description || task.title;
             console.warn('[TASK_UPDATE_STATUS] Starting spec creation for:', task.specId);
-            agentManager.startSpecCreation(taskId, project.path, taskDescription, specDir, task.metadata, baseBranchForUpdate, project.id);
+            const metadataWithProviderForUpdate = { ...task.metadata, provider: effectiveProviderForUpdate };
+            agentManager.startSpecCreation(taskId, project.path, taskDescription, specDir, metadataWithProviderForUpdate, baseBranchForUpdate, project.id);
           } else if (needsImplementation) {
             // Spec exists but no subtasks - run run.py to create implementation plan and execute
             console.warn('[TASK_UPDATE_STATUS] Starting task execution (no subtasks) for:', task.specId);
@@ -740,7 +798,8 @@ export function registerTaskExecutionHandlers(
                 workers: 1,
                 baseBranch: baseBranchForUpdate,
                 useWorktree: task.metadata?.useWorktree,
-                useLocalBranch: task.metadata?.useLocalBranch
+                useLocalBranch: task.metadata?.useLocalBranch,
+                provider: getEffectiveProvider(task.metadata?.provider)
               },
               project.id
             );
@@ -757,7 +816,8 @@ export function registerTaskExecutionHandlers(
                 workers: 1,
                 baseBranch: baseBranchForUpdate,
                 useWorktree: task.metadata?.useWorktree,
-                useLocalBranch: task.metadata?.useLocalBranch
+                useLocalBranch: task.metadata?.useLocalBranch,
+                provider: getEffectiveProvider(task.metadata?.provider)
               },
               project.id
             );
@@ -971,9 +1031,9 @@ export function registerTaskExecutionHandlers(
           plan.status = newStatus;
           plan.planStatus = newStatus === 'done' ? 'completed'
             : newStatus === 'in_progress' ? 'in_progress'
-            : newStatus === 'ai_review' ? 'review'
-            : newStatus === 'human_review' ? 'review'
-            : 'pending';
+              : newStatus === 'ai_review' ? 'review'
+                : newStatus === 'human_review' ? 'review'
+                  : 'pending';
           plan.updated_at = new Date().toISOString();
 
           // Add recovery note

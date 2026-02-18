@@ -244,6 +244,9 @@ export interface TaskMetadata {
   // Archive status
   archivedAt?: string;  // ISO date when task was archived
   archivedInVersion?: string;  // Version in which task was archived (from changelog)
+
+  // AI provider selection (persisted per-task)
+  provider?: 'claude' | 'copilot';  // AI provider to use for this task
 }
 
 export interface Task {
