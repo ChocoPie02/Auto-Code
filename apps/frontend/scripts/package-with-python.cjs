@@ -266,7 +266,9 @@ async function main() {
   }
 
   // Transform --config.* arguments to -c.* format for electron-builder
-  // electron-builder expects -c.extraMetadata.version=X, not --config.extraMetadata.version=X
+  // electron-builder CLI expects -c.extraMetadata.version=X, not --config.extraMetadata.version=X
+  // This fixes the error: "⨯ /path/to/frontend not a file" that occurs when the long form is used
+  // See: https://www.electron.build/cli - the --config flag expects a file path, not a dotted key
   const builderArgs = args.map((arg) => {
     if (arg.startsWith('--config.')) {
       return arg.replace('--config.', '-c.');
